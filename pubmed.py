@@ -103,7 +103,7 @@ def fetch_pubmed():
 
 def translate_text(text):
     """ChatGPT API を使って日本語に翻訳"""
-    url = "https://api.openai.com/v1/chat/completions"
+    url = "https://api.openai.com/v1/responses"
     headers = {
         "Authorization": f"Bearer {OPENAI_API_KEY}",
         "Content-Type": "application/json",
@@ -111,14 +111,21 @@ def translate_text(text):
 
     payload = {
         "model": "gpt-4o-mini",
-        "messages": [
-            {"role": "system", "content": "Translate the following English text into natural Japanese."},
-            {"role": "user", "content": text}
-        ]
+        "input": f"Translate the following English text into natural Japanese:\n{text}"
     }
 
     r = requests.post(url, json=payload, headers=headers)
-    return r.json()["choices"][0]["message"]["content"]
+    data = r.json()
+
+    # 新しいAPI形式に対応
+    try:
+        return data["output_text"]
+    except:
+        try:
+            return data["output"][0]["content"][0]["text"]
+        except:
+            # デバッグ用
+            return f"(翻訳エラー: {data})"
 
 
 def send_to_slack(message):
