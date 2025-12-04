@@ -1,42 +1,65 @@
-import os
 import requests
-from datetime import datetime, timedelta
+import os
 
-SLACK_URL = os.environ["SLACK_WEBHOOK_URL"]
-EMAIL = "example@example.com"   # 連絡先（何でもOK）
-QUERY = "(anesthesia OR anesthesiology OR neuroscience)"
-BASE = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/"
-
-def fetch_pubmed():
-    today = datetime.utcnow().date()
-    yesterday = today - timedelta(days=1)
-
+# ========== 1) PubMed abstract を取得 ==========
+def fetch_pubmed(pmid):
+    url = f"https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi"
     params = {
         "db": "pubmed",
-        "term": QUERY,
-        "mindate": yesterday.strftime("%Y/%m/%d"),
-        "maxdate": today.strftime("%Y/%m/%d"),
-        "datetype": "pdat",
-        "retmax": 20
+        "id": pmid,
+        "retmode": "xml"
+    }
+    r = requests.get(url, params=params)
+    xml = r.text
+
+    # Abstract の取り出し（簡易版）
+    start = xml.find("<AbstractText>")
+    end = xml.find("</AbstractText>")
+    if start != -1 and end != -1:
+        abstract = xml[start+15:end]
+    else:
+        abstract = "No abstract available."
+    return abstract
+
+
+# ========== 2) OpenAI API で日本語に翻訳 ==========
+def translate_to_japanese(text):
+    api_key = os.environ.get("OPENAI_API_KEY")
+
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {api_key}"
     }
 
-    r = requests.get(BASE + "esearch.fcgi", params=params)
-    ids = r.text.split("<Id>")[1:]
-    ids = [x.split("</Id>")[0] for x in ids]
+    data = {
+        "model": "gpt-4o-mini",   # 安くて翻訳が得意
+        "messages": [
+            {"role": "system", "content": "You are a professional medical translator."},
+            {"role": "user", "content": f"以下の英文アブストラクトを専門的な日本語に翻訳してください:\n\n{text}"}
+        ]
+    }
 
-    if not ids:
-        send_to_slack("今日は新しい論文はありません。")
-        return
+    r = requests.post("https://api.openai.com/v1/chat/completions",
+                      headers=headers, json=data)
+    result = r.json()
+    translated = result["choices"][0]["message"]["content"]
+    return translated
 
-    msg = "*今日のPubMed新着論文*\n"
-    for pmid in ids:
-        url = f"https://pubmed.ncbi.nlm.nih.gov/{pmid}/"
-        msg += f"- <{url}|PMID {pmid}>\n"
 
-    send_to_slack(msg)
+# ========== 3) Slack に送信 ==========
+def send_to_slack(message):
+    webhook_url = os.environ.get("SLACK_WEBHOOK_URL")
+    payload = {"text": message}
+    requests.post(webhook_url, json=payload)
 
-def send_to_slack(text):
-    requests.post(SLACK_URL, json={"text": text})
 
+# ========== 4) 実行フロー ==========
 if __name__ == "__main__":
-    fetch_pubmed()
+    pmid = "12345678"  # ← ここを検索した PMID に置き換える or 自動取得処理を追加
+
+    abstract = fetch_pubmed(pmid)
+    translated = translate_to_japanese(abstract)
+
+    text = f"【PMID: {pmid}】\n\n📝 *Abstract（日本語訳）*\n{translated}"
+
+    send_to_slack(text)
