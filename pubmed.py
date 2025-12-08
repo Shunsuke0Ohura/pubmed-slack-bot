@@ -26,8 +26,7 @@ SEARCH_TERMS = '''
 
   /* 神経科学ジャーナル追加 */
   "Journal of Neuroscience"[Journal] OR
-  "The Journal of Physiology"[Journal] OR
-  "eLife"[Journal]
+  "The Journal of Physiology"[Journal]
 )
 AND
 (
