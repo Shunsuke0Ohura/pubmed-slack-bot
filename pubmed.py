@@ -4,7 +4,44 @@ import requests
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 SLACK_WEBHOOK_URL = os.getenv("SLACK_WEBHOOK_URL")
 
-SEARCH_TERMS = '("anesthesia" OR "anesthesiology" OR "sevoflurane" OR "isoflurane" OR "neuroscience" OR "synaptic" OR "axon")'
+SEARCH_TERMS = '''
+(
+  "Nature"[Journal] OR 
+  "Science"[Journal] OR 
+  "Cell"[Journal] OR
+  "Nature Neuroscience"[Journal] OR
+  "Nature Communications"[Journal] OR
+  "Nature Medicine"[Journal] OR
+  "Nature Methods"[Journal] OR
+  "Neuron"[Journal] OR
+  "Cell Reports"[Journal] OR
+  "Current Biology"[Journal] OR
+
+  /* 麻酔関連ジャーナル */
+  "Anesthesiology"[Journal] OR
+  "British Journal of Anaesthesia"[Journal] OR
+  "Anesthesia & Analgesia"[Journal] OR
+  "Anaesthesia"[Journal] OR
+  "Journal of Anesthesia"[Journal] OR
+
+  /* 神経科学ジャーナル追加 */
+  "Journal of Neuroscience"[Journal] OR
+  "The Journal of Physiology"[Journal] OR
+  "eLife"[Journal]
+)
+AND
+(
+  "neuroscience" OR
+  "synaptic" OR
+  "axon" OR
+  "hippocampus" OR
+  "anesthesia" OR
+  "sevoflurane" OR
+  "isoflurane" OR
+  "propofol" OR
+  "volatile anesthetics"
+)
+'''
 MAX_PAPERS = 5
 
 
@@ -102,30 +139,42 @@ def fetch_pubmed():
 
 
 def translate_text(text):
-    """ChatGPT API を使って日本語に翻訳"""
+    """低コストで精度の高い日本語要約（gpt-4o-mini）"""
+
     url = "https://api.openai.com/v1/responses"
     headers = {
         "Authorization": f"Bearer {OPENAI_API_KEY}",
         "Content-Type": "application/json",
     }
 
+    prompt = f"""
+以下の医学系論文アブストラクトを、医学研究者向けに
+・内容を正確に
+・簡潔に
+・専門用語は正しく
+日本語で要約してください。
+
+--- 原文 ---
+{text}
+"""
+
     payload = {
-        "model": "gpt-4o-mini",
-        "input": f"Translate the following English text into natural Japanese:\n{text}"
+        "model": "gpt-4o-mini",   # ← 超低コスト・高コスパ
+        "input": prompt
     }
 
     r = requests.post(url, json=payload, headers=headers)
     data = r.json()
 
-    # 新しいAPI形式に対応
-    try:
+    if "output_text" in data:
         return data["output_text"]
-    except:
+    elif "output" in data:
         try:
             return data["output"][0]["content"][0]["text"]
         except:
-            # デバッグ用
-            return f"(翻訳エラー: {data})"
+            return f"(Unexpected response: {data})"
+    else:
+        return f"(Error: {data})"
 
 
 def send_to_slack(message):
